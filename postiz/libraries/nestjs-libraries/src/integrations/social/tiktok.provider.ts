@@ -389,7 +389,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       }${process?.env?.FRONTEND_URL}/integrations/social/tiktok`,
     };
 
-    const { access_token, refresh_token, scope } = await (
+    const token = await (
       await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -399,7 +399,19 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       })
     ).json();
 
-    this.checkScopes(this.scopes, scope);
+    // A failed token exchange has no scopes. Report the OAuth error instead
+    // of incorrectly telling the user to grant more permissions.
+    if (!token.access_token || token.error) {
+      const code = typeof token.error === 'string' && /^[a-zA-Z0-9_]+$/.test(token.error)
+        ? token.error : 'token_exchange_failed';
+      throw new Error(`TikTok OAuth: ${code}. Verify the Client key and Client secret belong to the same Sandbox, then reconnect.`);
+    }
+    const { access_token, refresh_token, scope } = token;
+    const granted = typeof scope === 'string' ? scope.split(/[\s,]+/).filter(Boolean) : [];
+    const missing = this.scopes.filter((permission) => !granted.includes(permission));
+    if (missing.length) {
+      throw new Error(`TikTok missing permissions: ${missing.join(', ')}. Enable these scopes and reconnect.`);
+    }
 
     const {
       data: {
