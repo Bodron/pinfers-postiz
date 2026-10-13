@@ -1,0 +1,25 @@
+# Credentials and local runtime data
+.env
+.env.*
+!.env.example
+config/
+state/
+uploads/
+logs/
+*.log
+*.sqlite3*
+*.db
+*.sql
+*.dump
+*.tar*
+*.zip
+*.mp4
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+pinfers-library/clips/
+pinfers-library/assets/*.img
+.DS_Store
+.runtime/
+bin/
