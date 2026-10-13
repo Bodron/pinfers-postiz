@@ -63,3 +63,16 @@ node scripts/validate-tiktok.cjs
 ```
 
 Testele folosesc API simulat și date temporare; nu publică nimic. Au fost verificate rotația pe conturi/zile, ofertele noi, evitarea duplicatelor, oprirea, expirarea și istoricul, sintaxa TypeScript/JavaScript și comportamentul upload-only TikTok. Build-ul complet Nest/Next și publicarea reală se verifică pe server după instalarea dependențelor.
+
+
+## Muzică în clipurile Facebook
+
+Configurați `FACEBOOK_MUSIC_FILE="/opt/pinfers-postiz/state/music/facebook-house.mp3"` în `config/postiz.env`, apoi reporniți serviciile PM2. Fișierul MP3 se transferă separat pe server. Nu este inclus în repository-ul public, deoarece licența Pixabay nu permite redistribuirea piesei ca fișier de sine stătător.
+
+Piesa aleasă: **House Energetic Upbeat**, PaulYudin / Pavel Bekirov, https://pixabay.com/music/edm-house-energetic-upbeat-456608/. Licența: https://pixabay.com/service/terms/. Piesa este marcată Content ID Registered. Dovada descărcării se păstrează separat; certificatul de licență poate fi descărcat după autentificarea în Pixabay.
+
+Copiile Facebook existente se refac în fundal cu muzica inclusă, la 65% din nivelul piesei și cu fade la început/sfârșit. Originalul TikTok nu este modificat. Dacă fișierul configurat lipsește, varianta Facebook nu este considerată gata; nu se produce intenționat o copie fără muzică.
+
+Când noua copie este gata, automatizarea înlocuiește doar propriile programări Facebook viitoare, aflate la peste 5 minute distanță, care folosesc versiunea veche. Publicările confirmate rămân în istoric; clipurile deja publicate și programările prea apropiate nu sunt modificate. Cache-ul media Postiz este invalidat pe baza versiunii fișierului. Migrarea SQLite adaugă două coloane, fără să șteargă date.
+
+Verificare audio locală: `python3 scripts/validate-facebook-audio.py`. Nu este necesar build Nest/Next pentru această actualizare Python.

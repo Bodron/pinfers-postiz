@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from scheduling import payload
-from facebook_video import ready as facebook_ready
+from facebook_video import ready as facebook_ready, version as media_version, music_path
 
 TZ = ZoneInfo('Europe/Bucharest')
 UPLOAD_ONLY = os.environ.get('TIKTOK_UPLOAD_ONLY','false') == 'true'
@@ -69,7 +69,7 @@ def choose(db,org,account,date,media_root,platform):
     if not candidates: return None
     return sorted(candidates,key=lambda x:x[:3])[0][3:]
 
-def cancel_pending(connection,org,api,invalid_only=False,now=None,allowed_accounts=None):
+def cancel_pending(connection,org,api,invalid_only=False,now=None,allowed_accounts=None,media_root=None):
     now=now or datetime.now(timezone.utc)
     with connection() as db:
         rows=[dict(r) for r in db.execute("SELECT * FROM plans WHERE org=? AND id LIKE 'auto:%' AND state IN ('scheduled','waiting_media','planned','failed') AND scheduled>?", (org,now.isoformat()))]
@@ -80,7 +80,12 @@ def cancel_pending(connection,org,api,invalid_only=False,now=None,allowed_accoun
             if variant and (allowed_accounts is None or plan['account'] in allowed_accounts):
                 item=json.loads(variant['data'])
                 end=datetime.fromisoformat(item['offer']['endDate'].replace('Z','+00:00'))
-                if end>=datetime.fromisoformat(plan['scheduled']) and (not plan.get('source_data') or plan['source_data']==variant['data']): continue
+                changed_media=False
+                if media_root and music_path() and plan['platform']=='facebook' and plan['post_id'] and datetime.fromisoformat(plan['scheduled'])>now+timedelta(minutes=5):
+                    folder=media_root/plan['key']
+                    if facebook_ready(folder):
+                        changed_media=plan.get('media_version')!=media_version(folder/'clip-facebook.mp4')
+                if not changed_media and end>=datetime.fromisoformat(plan['scheduled']) and (not plan.get('source_data') or plan['source_data']==variant['data']): continue
         if plan['post_id']:
             try: api.request('posts/'+plan['post_id'],method='DELETE')
             except urllib.error.HTTPError as error:
@@ -118,7 +123,7 @@ def run_once(connection,media_root,caption,api=None,now=None):
     accounts={a['id']:a for a in api.request('integrations')}
     eligible=[i for i in account_ids if i in accounts and not accounts[i].get('disabled') and
               accounts[i]['identifier'] in ('facebook','tiktok')]
-    cancel_pending(connection,org,api,invalid_only=True,now=now,allowed_accounts=eligible)
+    cancel_pending(connection,org,api,invalid_only=True,now=now,allowed_accounts=eligible,media_root=media_root)
     media_statuses={};sent_this_run=0
     for account_id in account_ids:
         account=accounts.get(account_id)
@@ -146,11 +151,13 @@ def run_once(connection,media_root,caption,api=None,now=None):
                         (slot,org,variant['key'],account_id,account['name'],platform,date.isoformat(),caption(item)[:2000] if platform=='tiktok' else caption(item),'waiting_media',variant['data']))
                 plan=dict(db.execute('SELECT * FROM plans WHERE id=?',(slot,)).fetchone())
                 media=db.execute('SELECT * FROM platform_media WHERE org=? AND key=? AND platform=?', (org,plan['key'],platform)).fetchone()
-            if not media:
-                source=media_root/plan['key']/('clip-facebook.mp4' if platform=='facebook' else 'clip.mp4')
+            source=media_root/plan['key']/('clip-facebook.mp4' if platform=='facebook' else 'clip.mp4')
+            if platform=='facebook' and not facebook_ready(source.parent): continue
+            source_version=media_version(source)
+            if not media or media['source_version']!=source_version:
                 record=api.upload(source)
                 with connection() as db:
-                    db.execute('INSERT OR REPLACE INTO platform_media VALUES(?,?,?,?,?)', (org,plan['key'],platform,record['id'],record['path']))
+                    db.execute('INSERT OR REPLACE INTO platform_media(org,key,platform,media_id,path,source_version) VALUES(?,?,?,?,?,?)', (org,plan['key'],platform,record['id'],record['path'],source_version))
                     db.execute('INSERT OR REPLACE INTO media_versions VALUES(?,?,?,?)', (org,plan['key'],record['id'],record['path']))
                 media={'media_id':record['id'],'path':record['path']}
             if media['media_id'] not in media_statuses:
@@ -179,7 +186,7 @@ def run_once(connection,media_root,caption,api=None,now=None):
                     db.execute('UPDATE automation SET last_error=? WHERE org=?',('O programare a eșuat; verifică planificările și calendarul Postiz.',org))
                 raise
             with connection() as db:
-                db.execute("UPDATE plans SET state='scheduled',post_id=? WHERE id=?", (post_id,slot))
+                db.execute("UPDATE plans SET state='scheduled',post_id=?,media_version=? WHERE id=?", (post_id,source_version,slot))
                 active=db.execute('SELECT enabled FROM automation WHERE org=?',(org,)).fetchone()
             # Stop may have raced with the in-flight schedule request.
             if not active or not active['enabled']:

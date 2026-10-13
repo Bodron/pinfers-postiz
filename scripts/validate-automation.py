@@ -65,6 +65,18 @@ class AutomationChecks(unittest.TestCase):
         with self.lib.connection() as db: self.add_offer(db,'brand-new')
         self.run_cycle()
         self.assertEqual(self.api.posts[6]['posts'][0]['value'][0]['content'],'brand-new')
+    def test_new_facebook_audio_replaces_future_media_without_erasing_publications(self):
+        self.run_cycle()
+        self.api.history=[{'id':'post-1','state':'PUBLISHED','publishDate':self.api.posts[0]['date'],'releaseURL':'https://facebook.com/example'}]
+        before=self.api.uploads
+        for clip in self.lib.MEDIA.glob('*/clip-facebook.mp4'):clip.write_bytes(b'padded-with-music')
+        with patch('autopost.music_path',return_value=Path('music.mp3')):
+            self.run_cycle()
+        self.assertTrue(self.api.cancelled)
+        self.assertNotIn('posts/post-1',self.api.cancelled)
+        self.assertGreater(self.api.uploads,before)
+        with self.lib.connection() as db:
+            self.assertEqual(db.execute('SELECT state FROM events').fetchone()[0],'PUBLISHED')
     def test_tiktok_inbox_automation_and_delivery_history(self):
         self.api.accounts=[{'id':'page','name':'TikTok','identifier':'tiktok','disabled':False}]
         with patch('autopost.UPLOAD_ONLY',True):

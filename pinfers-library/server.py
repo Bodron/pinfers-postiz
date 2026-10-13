@@ -40,6 +40,10 @@ with connection() as db:
         db.execute("ALTER TABLE events ADD COLUMN caption TEXT NOT NULL DEFAULT ''")
     if 'source_data' not in {r['name'] for r in db.execute('PRAGMA table_info(plans)')}:
         db.execute('ALTER TABLE plans ADD COLUMN source_data TEXT')
+    if 'media_version' not in {r['name'] for r in db.execute('PRAGMA table_info(plans)')}:
+        db.execute("ALTER TABLE plans ADD COLUMN media_version TEXT DEFAULT ''")
+    if 'source_version' not in {r['name'] for r in db.execute('PRAGMA table_info(platform_media)')}:
+        db.execute("ALTER TABLE platform_media ADD COLUMN source_version TEXT DEFAULT ''")
 
 def get_json(url,headers=None):
     req=urllib.request.Request(url,headers=headers or {})
