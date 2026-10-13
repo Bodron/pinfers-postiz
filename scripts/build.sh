@@ -16,5 +16,8 @@ command -v ffmpeg >/dev/null
 cd postiz
 pnpm install --frozen-lockfile
 pnpm exec dotenv -e .env -- pnpm run prisma-generate
-pnpm exec dotenv -e .env -- pnpm run build
+# Compile one workspace at a time with room for Nest's TypeScript compiler.
+# Apply after dotenv so runtime NODE_OPTIONS cannot lower the build limit.
+task_build_node_options="${NODE_OPTIONS:-} --max-old-space-size=${BUILD_HEAP_MB:-4096}"
+pnpm exec dotenv -e .env -- env NODE_OPTIONS="$task_build_node_options" pnpm run build
 echo 'Build complete. Database schema setup is a separate step in README.md.'
