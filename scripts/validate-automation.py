@@ -1,5 +1,6 @@
 """Offline tests: daily rotation, restart safety, expiration, and cancellation."""
 import importlib.util, json, os, sys, tempfile, unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -64,6 +65,17 @@ class AutomationChecks(unittest.TestCase):
         with self.lib.connection() as db: self.add_offer(db,'brand-new')
         self.run_cycle()
         self.assertEqual(self.api.posts[6]['posts'][0]['value'][0]['content'],'brand-new')
+    def test_tiktok_inbox_automation_and_delivery_history(self):
+        self.api.accounts=[{'id':'page','name':'TikTok','identifier':'tiktok','disabled':False}]
+        with patch('autopost.UPLOAD_ONLY',True):
+            self.run_cycle();self.run_cycle()
+            self.assertEqual(len(self.api.posts),6)
+            self.assertTrue(all(p['posts'][0]['settings']['content_posting_method']=='UPLOAD' for p in self.api.posts))
+            self.api.history=[{'id':'post-1','state':'PUBLISHED','publishDate':self.api.posts[0]['date'],'releaseURL':'https://www.tiktok.com/messages'}]
+            self.run_cycle()
+        with self.lib.connection() as db:
+            self.assertEqual(db.execute('SELECT state FROM events').fetchone()[0],'INBOX')
+            self.assertEqual(db.execute("SELECT state FROM plans WHERE post_id='post-1'").fetchone()[0],'inbox')
     def test_ambiguous_write_is_never_resent(self):
         self.api.ambiguous=True
         with self.assertRaises(TimeoutError):self.run_cycle()

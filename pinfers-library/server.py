@@ -224,7 +224,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/pinfers/api/automation':
                 if getattr(self,'user_role',None) not in ('SUPERADMIN','ADMIN'):
                     return self.result({'error':'Doar administratorul poate modifica publicarea automată.'},403)
-                from autopost import PostizAPI, UPLOAD_ONLY
+                from autopost import PostizAPI
                 api=PostizAPI()
                 if body.get('enabled') is not True:
                     with connection() as db: db.execute('UPDATE automation SET enabled=0 WHERE org=?',(org,))
@@ -247,8 +247,6 @@ class Handler(BaseHTTPRequestHandler):
                 if enabled and not ids: raise ValueError('Selectează cel puțin un cont.')
                 if any(i not in owned or i not in allowed or owned[i].get('disabled') or allowed[i]['identifier'] not in ('facebook','tiktok') for i in ids):
                     raise ValueError('Cheia API și conturile trebuie să aparțină aceleiași organizații Postiz.')
-                if enabled and UPLOAD_ONLY and any(allowed[i]['identifier']=='tiktok' for i in ids):
-                    raise ValueError('TikTok este în modul draft. Publicarea complet automată necesită Direct Post aprobat.')
                 with connection() as db:
                     other=db.execute('SELECT org FROM automation WHERE enabled=1 AND org!=?',(org,)).fetchone()
                     if other: raise ValueError('Automatizarea acestei instalări aparține deja altei organizații.')

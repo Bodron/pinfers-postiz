@@ -117,14 +117,14 @@ def run_once(connection,media_root,caption,api=None,now=None):
     sync_results(connection,org,api,now)
     accounts={a['id']:a for a in api.request('integrations')}
     eligible=[i for i in account_ids if i in accounts and not accounts[i].get('disabled') and
-              (accounts[i]['identifier']=='facebook' or (accounts[i]['identifier']=='tiktok' and not UPLOAD_ONLY))]
+              accounts[i]['identifier'] in ('facebook','tiktok')]
     cancel_pending(connection,org,api,invalid_only=True,now=now,allowed_accounts=eligible)
     media_statuses={};sent_this_run=0
     for account_id in account_ids:
         account=accounts.get(account_id)
         if not account or account.get('disabled'): continue
         platform=account['identifier']
-        if platform not in ('facebook','tiktok') or (platform=='tiktok' and UPLOAD_ONLY): continue
+        if platform not in ('facebook','tiktok'): continue
         for date in dates(now,times):
             slot='auto:'+str(uuid.uuid5(uuid.NAMESPACE_URL,org+'/'+account_id+'/'+date.isoformat()))
             with connection() as db:
@@ -166,7 +166,7 @@ def run_once(connection,media_root,caption,api=None,now=None):
             if not claimed: continue
             try:
                 body=payload(plan,media,item['offer']['title'])
-                if platform=='tiktok': body['posts'][0]['settings'].update(content_posting_method='DIRECT_POST',privacy_level='PUBLIC_TO_EVERYONE')
+                if platform=='tiktok' and not UPLOAD_ONLY: body['posts'][0]['settings'].update(content_posting_method='DIRECT_POST',privacy_level='PUBLIC_TO_EVERYONE')
                 result=api.request('posts',body)
                 post_id=result[0]['postId']
                 if not post_id: raise ValueError('No Postiz post id')
