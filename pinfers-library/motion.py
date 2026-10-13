@@ -1,5 +1,7 @@
 from pathlib import Path
 import math,subprocess
+from video_timing import VERSION, DURATIONS
+import json
 from PIL import Image,ImageDraw
 W,H,FPS=1080,1920,30
 BG='#EAF0F6'
@@ -38,17 +40,17 @@ def wipe(a,b,u):
 
 def render_motion(folder):
     scenes=[Image.open(folder/f'scene{n}.png').convert('RGB') for n in range(1,4)]
-    duration=13.2
+    duration=sum(DURATIONS)
     proc=subprocess.Popen(['ffmpeg','-hide_banner','-loglevel','error','-y','-f','rawvideo','-pix_fmt','rgb24','-s',f'{W}x{H}','-r',str(FPS),'-i','pipe:0','-an','-c:v','libx264','-threads','2','-preset','veryfast','-crf','22','-pix_fmt','yuv420p','-movflags','+faststart',str(folder/'clip.tmp.mp4')],stdin=subprocess.PIPE,stderr=subprocess.PIPE)
     cache={}
     try:
         for n in range(round(duration*FPS)):
             t=n/FPS
-            if 4.1<=t<5.0: frame=wipe(scenes[0],scenes[1],(t-4.1)/.9)
-            elif 8.3<=t<9.2: frame=wipe(scenes[1],scenes[2],(t-8.3)/.9)
+            if 1.8<=t<2.2: frame=wipe(scenes[0],scenes[1],(t-1.8)/.4)
+            elif 4.0<=t<4.4: frame=wipe(scenes[1],scenes[2],(t-4.0)/.4)
             else:
-                idx=0 if t<4.1 else 1 if t<8.3 else 2
-                start=[0,5.0,9.2][idx];end=[4.1,8.3,duration][idx]
+                idx=0 if t<1.8 else 1 if t<4.0 else 2
+                start=[0,2.2,4.4][idx];end=[1.8,4.0,duration][idx]
                 progress=max(0,min(1,(t-start)/(end-start)))
                 step=round(ease(progress)*20)
                 if (idx,step) not in cache:
@@ -59,5 +61,6 @@ def render_motion(folder):
         proc.stdin.close()
         if proc.wait(timeout=90)!=0:raise RuntimeError('Motion encoding failed')
         (folder/'clip.tmp.mp4').replace(folder/'clip.mp4')
+        (folder/'motion-version.json').write_text(json.dumps({'version':VERSION,'durations':DURATIONS}))
     except BaseException:
         proc.kill();raise

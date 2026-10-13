@@ -49,6 +49,15 @@ def get_json(url,headers=None):
     req=urllib.request.Request(url,headers=headers or {})
     with urllib.request.urlopen(req,timeout=30) as response:return json.load(response)
 
+def queue_outdated_motion():
+    from video_timing import current
+    with connection() as db:
+        keys=[r['key'] for r in db.execute("SELECT key FROM variants WHERE active=1 AND state='ready'") if not current(MEDIA/r['key'])]
+        for key in keys:
+            db.execute("UPDATE variants SET state='waiting',error=NULL WHERE key=? AND state='ready'",(key,))
+            db.execute('DELETE FROM media WHERE key=?',(key,))
+    return len(keys)
+
 def sync_catalog():
     with LOCK:
         items=[]
@@ -70,6 +79,7 @@ def sync_catalog():
                     db.execute("UPDATE variants SET state='waiting',error=NULL WHERE key=?",(key,))
                     db.execute('DELETE FROM media WHERE key=?',(key,))
                     db.execute('DELETE FROM platform_media WHERE key=?',(key,))
+        queue_outdated_motion()
         return len(items)
 
 def download(url,target):
@@ -112,7 +122,7 @@ def generate(row):
     scenes.ROOT=ROOT
     scenes.download().save(folder/'scene3.png')
     template.render(item,0,1350).resize((432,540)).save(folder/'poster.jpg',quality=88)
-    (folder/'frames.txt').write_text("file 'scene1.png'\nduration 4.1\nfile 'scene2.png'\nduration 4.2\nfile 'scene3.png'\nduration 4.9\nfile 'scene3.png'\n")
+    (folder/'frames.txt').write_text("file 'scene1.png'\nduration 2.2\nfile 'scene2.png'\nduration 2.2\nfile 'scene3.png'\nduration 4.0\nfile 'scene3.png'\n")
     # Full-resolution clip with smooth diagonal transitions, generated independently per location.
     from motion import render_motion
     render_motion(folder)
@@ -369,6 +379,7 @@ if __name__=='__main__':
     with connection() as db:
         db.execute("UPDATE variants SET state='waiting' WHERE state='rendering'")
         db.execute("UPDATE plans SET state='uncertain' WHERE state='sending'")
+    print('Clips queued for timing update:',queue_outdated_motion(),flush=True)
     for n in range(max(1,min(3,int(os.environ.get('RENDER_WORKERS','1'))))):multiprocessing.Process(target=worker,daemon=True).start()
     threading.Thread(target=automation_worker,daemon=True).start()
     print(f'Pinfers library ready on {BIND}:{PORT}',flush=True)

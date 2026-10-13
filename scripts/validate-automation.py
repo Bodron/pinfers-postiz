@@ -8,6 +8,7 @@ root=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(root/'pinfers-library'))
 from autopost import run_once, cancel_pending, dates, TZ
 from facebook_video import signature
+from video_timing import VERSION
 
 class FakeAPI:
     def __init__(self):
@@ -50,6 +51,7 @@ class AutomationChecks(unittest.TestCase):
         db.execute('INSERT INTO variants(key,offer_id,location_id,data,state) VALUES(?,?,?,?,?)',(key,offer,location,json.dumps(item),'ready'))
         folder=self.lib.MEDIA/key;folder.mkdir()
         (folder/'clip.mp4').write_bytes(b'original')
+        (folder/'motion-version.json').write_text(json.dumps({'version':VERSION}))
         (folder/'clip-facebook.mp4').write_bytes(b'padded')
         (folder/'facebook-render.json').write_text(json.dumps(signature(folder)))
     def run_cycle(self): run_once(self.lib.connection,self.lib.MEDIA,lambda x:x['offer']['title'],api=self.api,now=self.now)
@@ -67,6 +69,25 @@ class AutomationChecks(unittest.TestCase):
         with self.lib.connection() as db: self.add_offer(db,'brand-new')
         self.run_cycle()
         self.assertEqual(self.api.posts[6]['posts'][0]['value'][0]['content'],'brand-new')
+    def test_timing_regeneration_preserves_history_and_skips_current_clips(self):
+        self.run_cycle()
+        folder=next(self.lib.MEDIA.iterdir());(folder/'motion-version.json').unlink()
+        with self.lib.connection() as db:
+            db.execute("INSERT INTO events(org,post_id,key,account,state) VALUES('org','manual:timing',?,'page','PUBLISHED')",(folder.name,))
+        self.assertEqual(self.lib.queue_outdated_motion(),1)
+        self.assertEqual(self.lib.queue_outdated_motion(),0)
+        with self.lib.connection() as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0],1)
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM plans').fetchone()[0],6)
+            self.assertEqual(db.execute('SELECT state FROM variants WHERE key=?',(folder.name,)).fetchone()[0],'waiting')
+    def test_tiktok_future_schedules_refresh_after_timing_change(self):
+        self.api.accounts=[{'id':'page','name':'TikTok','identifier':'tiktok','disabled':False}]
+        with patch('autopost.UPLOAD_ONLY',True):
+            self.run_cycle()
+            for clip in self.lib.MEDIA.glob('*/clip.mp4'):clip.write_bytes(b'new-short-video')
+            self.run_cycle()
+        self.assertEqual(len(self.api.cancelled),6)
+        self.assertEqual(len(self.api.posts),12)
     def test_new_facebook_audio_replaces_future_media_without_erasing_publications(self):
         self.run_cycle()
         self.api.history=[{'id':'post-1','state':'PUBLISHED','publishDate':self.api.posts[0]['date'],'releaseURL':'https://facebook.com/example'}]

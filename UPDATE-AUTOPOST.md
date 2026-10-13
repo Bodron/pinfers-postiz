@@ -76,3 +76,12 @@ Copiile Facebook existente se refac în fundal cu muzica inclusă, la 65% din ni
 Când noua copie este gata, automatizarea înlocuiește doar propriile programări Facebook viitoare, aflate la peste 5 minute distanță, care folosesc versiunea veche. Publicările confirmate rămân în istoric; clipurile deja publicate și programările prea apropiate nu sunt modificate. Cache-ul media Postiz este invalidat pe baza versiunii fișierului. Migrarea SQLite adaugă două coloane, fără să șteargă date.
 
 Verificare audio locală: `python3 scripts/validate-facebook-audio.py`. Nu este necesar build Nest/Next pentru această actualizare Python.
+
+
+## Ritm de 8,4 secunde pentru toate clipurile
+
+Generatorul folosește acum 2,2 secunde pentru primul ecran, 2,2 secunde pentru al doilea și 4 secunde pentru ultimul: total 8,4 secunde la 30 fps. Tranzițiile de 0,4 secunde sunt incluse în primele două intervale, ca în exemplul aprobat. TikTok rămâne fără audio; varianta Facebook are padding-ul minim centrat și muzica configurată.
+
+După `git pull --ff-only` și restart PM2, clipurile active cu versiune veche sunt puse automat în coada de regenerare. Nu se șterg evenimentele, istoricul sau planurile. Catalogul este verificat și ulterior pentru clipuri care redevin active. Versiunile deja actualizate nu se refac la fiecare restart.
+
+Când clipurile scurte sunt gata, propriile programări automate Facebook și TikTok viitoare aflate la peste 5 minute distanță sunt înlocuite folosind noile fișiere. Postările deja publicate, livrate în inbox sau create manual în Calendar nu sunt modificate. Nu este necesar build Nest/Next.

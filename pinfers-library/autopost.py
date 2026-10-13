@@ -81,10 +81,11 @@ def cancel_pending(connection,org,api,invalid_only=False,now=None,allowed_accoun
                 item=json.loads(variant['data'])
                 end=datetime.fromisoformat(item['offer']['endDate'].replace('Z','+00:00'))
                 changed_media=False
-                if media_root and plan['platform']=='facebook' and plan['post_id'] and datetime.fromisoformat(plan['scheduled'])>now+timedelta(minutes=5):
+                if media_root and variant['state']=='ready' and plan['post_id'] and datetime.fromisoformat(plan['scheduled'])>now+timedelta(minutes=5):
                     folder=media_root/plan['key']
-                    if facebook_ready(folder):
-                        changed_media=plan.get('media_version')!=media_version(folder/'clip-facebook.mp4')
+                    source=folder/('clip-facebook.mp4' if plan['platform']=='facebook' else 'clip.mp4')
+                    if source.exists() and (plan['platform']!='facebook' or facebook_ready(folder)):
+                        changed_media=plan.get('media_version')!=media_version(source)
                 if not changed_media and end>=datetime.fromisoformat(plan['scheduled']) and (not plan.get('source_data') or plan['source_data']==variant['data']): continue
         if plan['post_id']:
             try: api.request('posts/'+plan['post_id'],method='DELETE')
