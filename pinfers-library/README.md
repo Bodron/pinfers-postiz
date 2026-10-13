@@ -6,8 +6,10 @@ Deschide https://pinferspostiz.bcmenu.ro/media după autentificarea în Postiz.
 
 ## Ce funcționează
 - Biblioteca, căutarea, selecția locației, previzualizarea și descrierea provizorie.
+- Descărcarea clipului MP4 și copierea descrierii din previzualizare.
+- Înregistrarea manuală a unei publicări TikTok/Facebook cu cont, dată, oră și descriere; aceasta actualizează istoricul fără să publice.
 - Generarea variantelor și importul în Media prin API-ul autentificat Postiz.
-- Istoric de publicări confirmate, legat prin ID-urile fișierelor Media.
+- Istoric de publicări confirmate prin Postiz și publicări notate manual, inclusiv descrierea folosită.
 - Planuri locale repetate per cont, cu date în Europe/Bucharest.
 - Propuneri de rotație pe conturi, pe baza numărului și datei publicărilor.
 

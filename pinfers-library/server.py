@@ -29,10 +29,13 @@ with connection() as db:
     CREATE TABLE IF NOT EXISTS variants(key TEXT PRIMARY KEY,offer_id TEXT,location_id TEXT,data TEXT,active INTEGER DEFAULT 1,state TEXT DEFAULT 'waiting',error TEXT,updated TEXT);
     CREATE TABLE IF NOT EXISTS media(org TEXT,key TEXT,media_id TEXT,path TEXT,PRIMARY KEY(org,key));
     CREATE TABLE IF NOT EXISTS media_versions(org TEXT,key TEXT,media_id TEXT,path TEXT,PRIMARY KEY(org,media_id));
-    CREATE TABLE IF NOT EXISTS events(org TEXT,post_id TEXT PRIMARY KEY,key TEXT,account TEXT,account_name TEXT,platform TEXT,state TEXT,publish_date TEXT,release_url TEXT);
+    CREATE TABLE IF NOT EXISTS events(org TEXT,post_id TEXT PRIMARY KEY,key TEXT,account TEXT,account_name TEXT,platform TEXT,state TEXT,publish_date TEXT,release_url TEXT,caption TEXT DEFAULT '');
     CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,org TEXT,key TEXT,account TEXT,account_name TEXT,platform TEXT,scheduled TEXT,caption TEXT,state TEXT DEFAULT 'planned',post_id TEXT);
     CREATE TABLE IF NOT EXISTS settings(org TEXT PRIMARY KEY,policy TEXT DEFAULT 'rotation');
     ''')
+    event_columns={r['name'] for r in db.execute('PRAGMA table_info(events)')}
+    if 'caption' not in event_columns:
+        db.execute("ALTER TABLE events ADD COLUMN caption TEXT NOT NULL DEFAULT ''")
 
 def get_json(url,headers=None):
     req=urllib.request.Request(url,headers=headers or {})
@@ -243,11 +246,37 @@ class Handler(BaseHTTPRequestHandler):
                             for m in matches:
                                 a=p.get('integration') or {}
                                 if p.get('state')!='PUBLISHED':continue
-                                db.execute('INSERT OR REPLACE INTO events VALUES(?,?,?,?,?,?,?,?,?)',(org,p['id'],m['key'],a.get('id',''),a.get('name',''),a.get('providerIdentifier',''),p['state'],p.get('publishDate',''),p.get('releaseURL','')));total+=1
+                                db.execute('INSERT OR REPLACE INTO events (org,post_id,key,account,account_name,platform,state,publish_date,release_url,caption) VALUES(?,?,?,?,?,?,?,?,?,?)',(org,p['id'],m['key'],a.get('id',''),a.get('name',''),a.get('providerIdentifier',''),p['state'],p.get('publishDate',''),p.get('releaseURL',''),p.get('content','')));total+=1
                     if not result.get('hasMore',result.get('hm',False)):break
                 return self.result({'ok':True,'matched':total})
             if path=='/pinfers/api/retry':
                 with connection() as db:db.execute("UPDATE variants SET state='waiting',error=NULL WHERE active=1 AND state='error'")
+                return self.result({'ok':True})
+            if path=='/pinfers/api/manual-post':
+                key=str(body.get('key','')).strip()
+                platform=str(body.get('platform','')).strip().lower()
+                account_name=str(body.get('accountName','')).strip()
+                post_caption=str(body.get('caption','')).strip()
+                published_at=str(body.get('publishedAt','')).strip()
+                release_url=str(body.get('releaseUrl','')).strip()
+                if platform not in ['tiktok','facebook']:raise ValueError('Alege TikTok sau Facebook.')
+                if not account_name or len(account_name)>160:raise ValueError('Scrie numele contului (maximum 160 de caractere).')
+                if len(post_caption)>5000:raise ValueError('Descrierea este prea lungă.')
+                try:
+                    published=datetime.fromisoformat(published_at)
+                    if published.tzinfo is None:published=published.replace(tzinfo=ZoneInfo('Europe/Bucharest'))
+                    published=published.astimezone(timezone.utc).isoformat()
+                except Exception:raise ValueError('Alege data și ora publicării.')
+                if release_url:
+                    parsed=urlparse(release_url)
+                    if parsed.scheme not in ['http','https'] or not parsed.netloc:raise ValueError('Linkul postării trebuie să înceapă cu http:// sau https://.')
+                with connection() as db:
+                    variant=db.execute('SELECT data FROM variants WHERE key=? AND active=1',(key,)).fetchone()
+                    if not variant:raise ValueError('Oferta nu mai este activă.')
+                    if not post_caption:post_caption=caption(json.loads(variant['data']))
+                    account_id='manual:'+hashlib.sha256((platform+'\0'+account_name.casefold()).encode()).hexdigest()[:24]
+                    db.execute('INSERT INTO events (org,post_id,key,account,account_name,platform,state,publish_date,release_url,caption) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                        (org,'manual:'+str(uuid.uuid4()),key,account_id,account_name,platform,'PUBLISHED',published,release_url,post_caption))
                 return self.result({'ok':True})
             return self.result({'error':'Not found'},404)
         except ValueError as e:return self.result({'error':str(e)},400)
