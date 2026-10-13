@@ -52,4 +52,13 @@ class DeploymentChecks(unittest.TestCase):
             self.assertEqual(db.execute('SELECT COUNT(*) FROM plans').fetchone()[0], 0)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0], 0)
 
+    def test_non_admin_cannot_use_server_api_key_to_enable_automation(self):
+        handler = object.__new__(self.module.Handler)
+        handler.headers = {'Origin':'https://pinferspostiz.bcmenu.ro','Content-Length':'2'}
+        handler.path='/pinfers/api/automation';handler.rfile=io.BytesIO(b'{}')
+        handler.auth=lambda:'test-org';handler.user_role='USER'
+        results=[];handler.result=lambda body,status=200:results.append((status,body))
+        handler.do_POST()
+        self.assertEqual(results[0][0],403)
+
 if __name__ == '__main__': unittest.main()

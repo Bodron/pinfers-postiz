@@ -1,5 +1,5 @@
 """Local Pinfers library. Public catalog GETs only; Postiz auth is delegated.
-No social publishing endpoint. Repeated plans are local until explicitly transferred.
+Continuous publishing is opt-in and delegated to Postiz with a private API key.
 """
 import json, sqlite3, threading, urllib.request, urllib.error, hashlib, mimetypes
 import os, time, subprocess, re, uuid
@@ -32,10 +32,14 @@ with connection() as db:
     CREATE TABLE IF NOT EXISTS events(org TEXT,post_id TEXT PRIMARY KEY,key TEXT,account TEXT,account_name TEXT,platform TEXT,state TEXT,publish_date TEXT,release_url TEXT,caption TEXT DEFAULT '');
     CREATE TABLE IF NOT EXISTS plans(id TEXT PRIMARY KEY,org TEXT,key TEXT,account TEXT,account_name TEXT,platform TEXT,scheduled TEXT,caption TEXT,state TEXT DEFAULT 'planned',post_id TEXT);
     CREATE TABLE IF NOT EXISTS settings(org TEXT PRIMARY KEY,policy TEXT DEFAULT 'rotation');
+    CREATE TABLE IF NOT EXISTS platform_media(org TEXT,key TEXT,platform TEXT,media_id TEXT,path TEXT,PRIMARY KEY(org,key,platform));
+    CREATE TABLE IF NOT EXISTS automation(org TEXT PRIMARY KEY,enabled INTEGER DEFAULT 0,accounts TEXT,times TEXT,last_run TEXT,last_error TEXT);
     ''')
     event_columns={r['name'] for r in db.execute('PRAGMA table_info(events)')}
     if 'caption' not in event_columns:
         db.execute("ALTER TABLE events ADD COLUMN caption TEXT NOT NULL DEFAULT ''")
+    if 'source_data' not in {r['name'] for r in db.execute('PRAGMA table_info(plans)')}:
+        db.execute('ALTER TABLE plans ADD COLUMN source_data TEXT')
 
 def get_json(url,headers=None):
     req=urllib.request.Request(url,headers=headers or {})
@@ -61,6 +65,7 @@ def sync_catalog():
                 if changed:
                     db.execute("UPDATE variants SET state='waiting',error=NULL WHERE key=?",(key,))
                     db.execute('DELETE FROM media WHERE key=?',(key,))
+                    db.execute('DELETE FROM platform_media WHERE key=?',(key,))
         return len(items)
 
 def download(url,target):
@@ -107,6 +112,8 @@ def generate(row):
     # Full-resolution clip with smooth diagonal transitions, generated independently per location.
     from motion import render_motion
     render_motion(folder)
+    from facebook_video import generate as facebook_copy
+    facebook_copy(folder)
 
 def worker():
     while not STOP.is_set():
@@ -115,7 +122,15 @@ def worker():
             # First one variant per distinct offer, then complete remaining locations.
             row=db.execute("SELECT v.* FROM variants v WHERE active=1 AND state='waiting' ORDER BY EXISTS(SELECT 1 FROM variants r WHERE r.offer_id=v.offer_id AND r.state='ready'),updated,key LIMIT 1").fetchone()
             if row:db.execute("UPDATE variants SET state='rendering',error=NULL WHERE key=?",(row['key'],))
-        if not row:STOP.wait(2);continue
+        if not row:
+            from facebook_video import ready as facebook_ready, generate as facebook_copy
+            with connection() as db:
+                backfill=next((r for r in db.execute("SELECT key FROM variants WHERE state='ready' AND active=1") if (MEDIA/r['key']/'clip.mp4').exists() and not facebook_ready(MEDIA/r['key'])),None)
+            if backfill:
+                try: facebook_copy(MEDIA/backfill['key'])
+                except Exception: STOP.wait(30)
+            else: STOP.wait(2)
+            continue
         try:
             generate(row)
             with connection() as db:db.execute("UPDATE variants SET state='ready',error=NULL WHERE key=? AND data=?",(row['key'],row['data']))
@@ -137,7 +152,9 @@ class Handler(BaseHTTPRequestHandler):
     def postiz(self,path):
         return get_json(POSTIZ_BASE+'/api/'+path,{'Cookie':self.headers.get('Cookie',''),'Accept':'application/json'})
     def auth(self):
-        try:return self.postiz('user/self')['orgId']
+        try:
+            user=self.postiz('user/self');self.user_role=user.get('role')
+            return user['orgId']
         except Exception:return None
     def do_GET(self):
         path=unquote(urlparse(self.path).path)
@@ -158,8 +175,17 @@ class Handler(BaseHTTPRequestHandler):
                 events=[dict(r) for r in db.execute('SELECT * FROM events WHERE org=? ORDER BY publish_date DESC',(org,))]
                 plans=[dict(r) for r in db.execute('SELECT * FROM plans WHERE org=? ORDER BY scheduled',(org,))]
                 media={r['key']:dict(r) for r in db.execute('SELECT * FROM media WHERE org=?',(org,))}
-            for r in rows:r['data']=json.loads(r['data']);r['caption']=caption(r['data']);r['media']=media.get(r['key'])
-            return self.result({'variants':rows,'events':events,'plans':plans,'policy':'rotation','timezone':'Europe/Bucharest'})
+                automation=db.execute('SELECT * FROM automation WHERE org=?',(org,)).fetchone()
+            from facebook_video import ready as facebook_ready
+            for r in rows:
+                r['data']=json.loads(r['data']);r['caption']=caption(r['data']);r['media']=media.get(r['key'])
+                r['facebookReady']=facebook_ready(MEDIA/r['key'])
+            auto=dict(automation) if automation else {'enabled':False,'accounts':'[]','times':'["10:00","15:00","20:00"]'}
+            auto['accounts']=json.loads(auto['accounts']);auto['times']=json.loads(auto['times'])
+            auto['keyConfigured']=bool(os.environ.get('POSTIZ_AUTOMATION_API_KEY'))
+            auto['canManage']=getattr(self,'user_role',None) in ('SUPERADMIN','ADMIN')
+            auto['tiktokDirect']=os.environ.get('TIKTOK_UPLOAD_ONLY','false')!='true'
+            return self.result({'variants':rows,'events':events,'plans':plans,'automation':auto,'policy':'rotation','timezone':'Europe/Bucharest'})
         if path=='/pinfers/api/accounts':
             try:
                 accounts=self.postiz('integrations/list').get('integrations',[])
@@ -167,7 +193,7 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:return self.result({'error':'Nu am putut citi conturile Postiz.'},502)
         if path.startswith('/pinfers/clips/'):
             target=(MEDIA/path.removeprefix('/pinfers/clips/')).resolve()
-            if not target.is_relative_to(MEDIA.resolve()) or target.name not in ['clip.mp4','poster.jpg']:return self.result({'error':'Not found'},404)
+            if not target.is_relative_to(MEDIA.resolve()) or target.name not in ['clip.mp4','clip-facebook.mp4','poster.jpg']:return self.result({'error':'Not found'},404)
             if not target.exists():return self.result({'error':'Clipul încă se generează.'},404)
             size=target.stat().st_size;start=0;end=size-1;status=200
             match=re.match(r'bytes=(\d+)-(\d*)',self.headers.get('Range',''))
@@ -195,6 +221,40 @@ class Handler(BaseHTTPRequestHandler):
             body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0))) or b'{}')
             path=urlparse(self.path).path
             if path=='/pinfers/api/sync':return self.result({'count':sync_catalog()})
+            if path=='/pinfers/api/automation':
+                if getattr(self,'user_role',None) not in ('SUPERADMIN','ADMIN'):
+                    return self.result({'error':'Doar administratorul poate modifica publicarea automată.'},403)
+                from autopost import PostizAPI, UPLOAD_ONLY
+                api=PostizAPI()
+                if body.get('enabled') is not True:
+                    with connection() as db: db.execute('UPDATE automation SET enabled=0 WHERE org=?',(org,))
+                    try:
+                        from autopost import cancel_pending
+                        cancel_pending(connection,org,api)
+                    except Exception:
+                        message='Automatizarea este oprită, dar anularea unor programări a eșuat. Verifică calendarul Postiz.'
+                        with connection() as db: db.execute('UPDATE automation SET last_error=? WHERE org=?',(message,org))
+                        return self.result({'error':message},502)
+                    return self.result({'ok':True})
+                if not api.key: raise ValueError('Completează POSTIZ_AUTOMATION_API_KEY pe server.')
+                owned={a['id']:a for a in self.postiz('integrations/list')['integrations']}
+                allowed={a['id']:a for a in api.request('integrations')}
+                ids=list(dict.fromkeys(body.get('accounts',[])))
+                enabled=body.get('enabled') is True
+                times=body.get('times',['10:00','15:00','20:00'])
+                if len(times)!=3 or len(set(times))!=3 or any(not isinstance(t,str) or not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d',t) for t in times):
+                    raise ValueError('Alege 3 ore diferite, în format HH:MM.')
+                if enabled and not ids: raise ValueError('Selectează cel puțin un cont.')
+                if any(i not in owned or i not in allowed or owned[i].get('disabled') or allowed[i]['identifier'] not in ('facebook','tiktok') for i in ids):
+                    raise ValueError('Cheia API și conturile trebuie să aparțină aceleiași organizații Postiz.')
+                if enabled and UPLOAD_ONLY and any(allowed[i]['identifier']=='tiktok' for i in ids):
+                    raise ValueError('TikTok este în modul draft. Publicarea complet automată necesită Direct Post aprobat.')
+                with connection() as db:
+                    other=db.execute('SELECT org FROM automation WHERE enabled=1 AND org!=?',(org,)).fetchone()
+                    if other: raise ValueError('Automatizarea acestei instalări aparține deja altei organizații.')
+                    db.execute('INSERT INTO automation(org,enabled,accounts,times) VALUES(?,?,?,?) ON CONFLICT(org) DO UPDATE SET enabled=excluded.enabled,accounts=excluded.accounts,times=excluded.times,last_error=NULL',
+                               (org,int(enabled),json.dumps(ids),json.dumps(times)))
+                return self.result({'ok':True})
             if path=='/pinfers/api/refresh-media':
                 return self.result({'updated':False})
             if path=='/pinfers/api/media':
@@ -204,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not media:raise ValueError('Fișierul nu există în organizația Postiz.')
                 # Media response schema varies; use the upload record only with a local path.
                 path_value=body['path']
-                if not isinstance(path_value,str) or not re.match(r'^(https?://localhost:4007)?/?uploads/',path_value):raise ValueError('Fișierul trebuie să fie încărcat în Postiz local.')
+                if not isinstance(path_value,str) or path_value!=media.get('path'):raise ValueError('Calea nu corespunde fișierului încărcat în Postiz.')
                 with connection() as db:
                     if not db.execute('SELECT 1 FROM variants WHERE key=?',(key,)).fetchone():raise ValueError('Ofertă invalidă')
                     db.execute('INSERT OR REPLACE INTO media VALUES(?,?,?,?)',(org,key,media_id,path_value))
@@ -246,7 +306,8 @@ class Handler(BaseHTTPRequestHandler):
                             for m in matches:
                                 a=p.get('integration') or {}
                                 if p.get('state')!='PUBLISHED':continue
-                                db.execute('INSERT OR REPLACE INTO events (org,post_id,key,account,account_name,platform,state,publish_date,release_url,caption) VALUES(?,?,?,?,?,?,?,?,?,?)',(org,p['id'],m['key'],a.get('id',''),a.get('name',''),a.get('providerIdentifier',''),p['state'],p.get('publishDate',''),p.get('releaseURL',''),p.get('content','')));total+=1
+                                state='INBOX' if a.get('providerIdentifier','').startswith('tiktok') and '/messages' in (p.get('releaseURL') or '') else p['state']
+                                db.execute('INSERT OR REPLACE INTO events (org,post_id,key,account,account_name,platform,state,publish_date,release_url,caption) VALUES(?,?,?,?,?,?,?,?,?,?)',(org,p['id'],m['key'],a.get('id',''),a.get('name',''),a.get('providerIdentifier',''),state,p.get('publishDate',''),p.get('releaseURL',''),p.get('content','')));total+=1
                     if not result.get('hasMore',result.get('hm',False)):break
                 return self.result({'ok':True,'matched':total})
             if path=='/pinfers/api/retry':
@@ -282,11 +343,31 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:return self.result({'error':str(e)},400)
         except Exception:return self.result({'error':'Operațiunea nu a reușit. Datele existente sunt păstrate.'},500)
 
+def automation_worker():
+    from autopost import run_once
+    last_sync=0
+    while not STOP.is_set():
+        with connection() as db: config=db.execute('SELECT org FROM automation WHERE enabled=1').fetchone()
+        if config:
+            try:
+                if time.monotonic()-last_sync>900:
+                    sync_catalog();last_sync=time.monotonic()
+                run_once(connection,MEDIA,caption)
+            except Exception as error:
+                with connection() as db:
+                    db.execute('UPDATE automation SET last_error=? WHERE org=?',
+                               ('Automatizarea are o eroare. Verifică cheia API, conturile și planificările.',config['org']))
+                print('Automation error:',type(error).__name__,flush=True)
+        STOP.wait(60)
+
 if __name__=='__main__':
     if '--sync' in os.sys.argv:
         print('Catalog pairs:',sync_catalog());raise SystemExit()
     import multiprocessing
-    with connection() as db:db.execute("UPDATE variants SET state='waiting' WHERE state='rendering'")
+    with connection() as db:
+        db.execute("UPDATE variants SET state='waiting' WHERE state='rendering'")
+        db.execute("UPDATE plans SET state='uncertain' WHERE state='sending'")
     for n in range(max(1,min(3,int(os.environ.get('RENDER_WORKERS','1'))))):multiprocessing.Process(target=worker,daemon=True).start()
+    threading.Thread(target=automation_worker,daemon=True).start()
     print(f'Pinfers library ready on {BIND}:{PORT}',flush=True)
     ThreadingHTTPServer((BIND,PORT),Handler).serve_forever()

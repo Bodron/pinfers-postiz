@@ -2,7 +2,7 @@
 
 Sursă Postiz inclusă în `postiz/`, modulul Content Pinfers în `pinfers-library/`, configurații PM2 și Nginx. Un singur `git clone`; nu sunt necesare submodule Git. Versiunea upstream este fixată în `UPSTREAM.md`.
 
-**Nu există publicare automată în modulul Pinfers.** Biblioteca generează clipuri, importă fișiere în Postiz, citește istoricul și păstrează planuri locale. Conectarea conturilor, aprobările TikTok și publicarea se configurează separat. Descrierile sunt încă provizorii. Muzica nu se selectează automat în această versiune.
+**Publicarea continuă este opțională:** 3 oferte diferite pe zi pe fiecare cont selectat, programate prin Postiz. Se activează din Content → Planificări & rotație după configurarea cheii API private. Facebook are o variantă video cu margini mai mari; TikTok Sandbox rămâne pentru inbox/draft, iar publicarea complet automată necesită Direct Post aprobat. Instalarea nu activează automatizarea. Vezi [UPDATE-AUTOPOST.md](UPDATE-AUTOPOST.md) pentru chei, instalare și limite. Muzica nu se selectează automat.
 
 ## Ce este inclus și ce rămâne privat
 
@@ -85,6 +85,8 @@ Completează local:
 | `NOT_SECURED` | `false`, fiindcă domeniul va folosi HTTPS |
 | `RENDER_WORKERS` | `1` inițial; crește la 2–3 numai dacă ai CPU/RAM suficient |
 | `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET` | Goale până configurăm aplicația TikTok; apoi cheile reale, numai local |
+| `TIKTOK_UPLOAD_ONLY` | `true` pentru Sandbox/inbox; `false` numai după configurarea Direct Post Production |
+| `POSTIZ_AUTOMATION_API_KEY` | Cheia API privată Postiz din Settings → Agents; necesară workerului de publicare zilnică |
 | `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET` | Goale; integrare separată TikTok Business |
 | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | Goale până configurăm aplicația Meta |
 

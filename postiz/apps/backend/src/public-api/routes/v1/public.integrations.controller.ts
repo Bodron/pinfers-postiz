@@ -242,6 +242,11 @@ export class PublicIntegrationsController {
     return { connected: true };
   }
 
+  @Get('/media/:id/status')
+  getMediaStatus(@GetOrgFromRequest() org: Organization, @Param('id') id: string) {
+    return this._mediaService.getMediaStatus(org.id, id);
+  }
+
   @Get('/media')
   async getMedia(
     @GetOrgFromRequest() org: Organization,

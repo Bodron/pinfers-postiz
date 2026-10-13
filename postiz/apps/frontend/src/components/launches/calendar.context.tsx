@@ -92,6 +92,7 @@ export const CalendarContext = createContext({
 });
 
 export interface Integrations {
+  uploadOnly?: boolean;
   name: string;
   originalName?: string;
   id: string;

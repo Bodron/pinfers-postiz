@@ -36,14 +36,25 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   name = 'Tiktok';
   isBetweenSteps = false;
   convertToJPEG = true;
-  scopes = [
+  get uploadOnly() {
+    return process.env.TIKTOK_UPLOAD_ONLY === 'true';
+  }
+  get scopes() {
+    return this.uploadOnly ? ['user.info.basic', 'video.upload'] : [
     'video.list',
     'user.info.basic',
     'video.publish',
     'video.upload',
     'user.info.profile',
     'user.info.stats',
-  ];
+    ];
+  }
+  private get userInfoUrl() {
+    const fields = this.uploadOnly
+      ? 'open_id,avatar_url,display_name'
+      : 'open_id,avatar_url,display_name,union_id,username';
+    return `https://open.tiktokapis.com/v2/user/info/?fields=${fields}`;
+  }
   override maxConcurrentJob = 10000;
   dto = TikTokDto;
   editor = 'normal' as const;
@@ -317,7 +328,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       },
     } = await (
       await fetch(
-        'https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,union_id,username',
+        this.userInfoUrl,
         {
           method: 'GET',
           headers: {
@@ -334,7 +345,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       id: open_id.replace(/-/g, ''),
       name: display_name,
       picture: avatar_url || '',
-      username: username,
+      username: username || '',
     };
   }
 
@@ -396,7 +407,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       },
     } = await (
       await fetch(
-        'https://open.tiktokapis.com/v2/user/info/?fields=open_id,avatar_url,display_name,union_id,username',
+        this.userInfoUrl,
         {
           method: 'GET',
           headers: {
@@ -413,11 +424,13 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       refreshToken: refresh_token,
       expiresIn: dayjs().add(23, 'hours').unix() - dayjs().unix(),
       picture: avatar_url,
-      username: username,
+      username: username || '',
     };
   }
 
   async maxVideoLength(accessToken: string) {
+    // Creator Info requires video.publish; the inbox flow has no such grant.
+    if (this.uploadOnly) return { maxDurationSeconds: 60 };
     const {
       data: { max_video_post_duration_sec },
     } = await (
@@ -541,6 +554,7 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
   private contentPostingMethod(
     firstPost: PostDetails<TikTokDto>
   ): TikTokDto['content_posting_method'] {
+    if (this.uploadOnly) return 'UPLOAD';
     return firstPost?.settings?.content_posting_method === 'UPLOAD'
       ? 'UPLOAD'
       : 'DIRECT_POST';
@@ -612,6 +626,9 @@ export class TiktokProvider extends SocialAbstract implements SocialProvider {
       };
     }
 
+    // Video inbox uploads accept only source_info; captions are completed in
+    // TikTok. Keep the caption in Postiz for copying, not in this API request.
+    if (!isPhoto) return {};
     return {
       post_info: {
         ...(isPhoto && firstPost.settings.title

@@ -3,6 +3,7 @@
 import {
   FC,
   useMemo,
+  useEffect,
 } from 'react';
 import {
   PostComment,
@@ -23,13 +24,17 @@ import { TikTokLocationSelector } from '@gitroom/frontend/components/new-launch/
 const TikTokSettings: FC<{
   values?: any;
 }> = (props) => {
-  const { watch, register } = useSettings();
+  const { watch, register, setValue } = useSettings();
   const { value, integration } = useIntegration();
   const t = useT();
 
   // Music and location come from the Business API (v1.3) - the legacy Content
   // Posting API used by the "tiktok" identifier has no such fields.
   const isBusiness = integration?.identifier === 'tiktok-business';
+  const uploadOnly = !!integration?.uploadOnly && !isBusiness;
+  useEffect(() => {
+    if (uploadOnly) setValue('content_posting_method', 'UPLOAD');
+  }, [uploadOnly, setValue]);
 
   const isTitle = useMemo(() => {
     return value?.[0]?.image?.some((p) => (p?.path?.indexOf?.('mp4') ?? -1) === -1);
@@ -43,7 +48,7 @@ const TikTokSettings: FC<{
   const brand_organic_toggle = watch('brand_organic_toggle');
   const brand_content_toggle = watch('brand_content_toggle');
   const content_posting_method = watch('content_posting_method');
-  const isUploadMode = content_posting_method === 'UPLOAD';
+  const isUploadMode = uploadOnly || content_posting_method === 'UPLOAD';
 
   // TikTok ignores every setting except the title / content when the posting
   // method is UPLOAD, so we hide them rather than pretend they apply. The fields
@@ -61,7 +66,7 @@ const TikTokSettings: FC<{
     }
     return t(
       'tiktok_restriction_upload_video',
-      'TikTok restriction: For upload-only video, TikTok does not accept a title or message. The content will default to "#Postiz" and you can edit it inside the TikTok app before publishing.'
+      'TikTok inbox uploads do not carry the video caption. Copy your caption from Postiz and add it in TikTok before publishing.'
     );
   }, [hasMedia, isUploadMode, isVideo, t]);
 
@@ -158,12 +163,13 @@ const TikTokSettings: FC<{
       </div>
       <Select
         label={t('label_content_posting_method', 'Content posting method')}
+        disabled={uploadOnly}
         {...register('content_posting_method', {
-          value: 'DIRECT_POST',
+          value: uploadOnly ? 'UPLOAD' : 'DIRECT_POST',
         })}
       >
         <option value="">{t('select', 'Select')}</option>
-        {contentPostingMethod.map((item) => (
+        {contentPostingMethod.filter((item) => !uploadOnly || item.value === 'UPLOAD').map((item) => (
           <option key={item.value} value={item.value}>
             {item.label}
           </option>

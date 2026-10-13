@@ -128,6 +128,7 @@ export class IntegrationsController {
             stripLinks: !!findIntegration?.stripLinks?.(),
             picture: p.picture || '/no-picture.jpg',
             identifier: p.providerIdentifier,
+            uploadOnly: p.providerIdentifier === 'tiktok' && process.env.TIKTOK_UPLOAD_ONLY === 'true',
             inBetweenSteps: p.inBetweenSteps,
             refreshNeeded: p.refreshNeeded,
             isCustomFields: !!findIntegration.customFields,
