@@ -1,6 +1,6 @@
 # Content Pinfers în Postiz local
 
-Deschide http://localhost:4007/media după autentificarea în Postiz.
+Deschide https://pinferspostiz.bcmenu.ro/media după autentificarea în Postiz.
 
 38 oferte distincte și 182 variante ofertă–locație în snapshot-ul inițial. Logo-ul și clipul sunt separate pentru fiecare locație. Catalogul este preluat numai prin GET din API-ul public Pinfers; MongoDB și proiectul Pinfers nu sunt modificate.
 
@@ -17,6 +17,6 @@ Conturile sociale nu sunt încă conectate. Planurile sunt locale și nu sunt tr
 Butonul Actualizează ofertele citește din nou catalogul; clipurile schimbate intră în coadă. Importă clipurile în Media încarcă variantele gata prin sesiunea utilizatorului. Nu există acces direct la volumul de uploads. Variantele vechi importate anterior sunt păstrate în Media originală; Content Pinfers folosește asocierea curentă.
 
 ## Pornire
-Modulul pinfers-library pornește cu Docker Compose împreună cu Postiz. Datele și clipurile sunt în acest folder; se păstrează la restart. Biblioteca originală Postiz este accesibilă la /media?native=1.
+În acest repository modulul pornește prin PM2. Datele SQLite și clipurile sunt în LIBRARY_DATA_DIR (implicit state/ în configurația serverului), separat de sursa versionată. Vezi README.md din rădăcină pentru pașii de instalare. Biblioteca originală Postiz este accesibilă la /media?native=1.
 
-Configurația Nginx este montată read-only în Postiz. Biblioteca verifică autentificarea prin /api/user/self, nu păstrează parole și nu generează chei API. Secretele Pinfers nu sunt copiate.
+Nginx direcționează /media și /pinfers/ către modulul Python; fișierul nginx-site.conf se include într-un vhost separat. Biblioteca verifică autentificarea prin /api/user/self, nu păstrează parole și nu generează chei API. Secretele Pinfers nu sunt copiate.
