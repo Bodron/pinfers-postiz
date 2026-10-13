@@ -85,3 +85,8 @@ Generatorul folosește acum 2,2 secunde pentru primul ecran, 2,2 secunde pentru 
 După `git pull --ff-only` și restart PM2, clipurile active cu versiune veche sunt puse automat în coada de regenerare. Nu se șterg evenimentele, istoricul sau planurile. Catalogul este verificat și ulterior pentru clipuri care redevin active. Versiunile deja actualizate nu se refac la fiecare restart.
 
 Când clipurile scurte sunt gata, propriile programări automate Facebook și TikTok viitoare aflate la peste 5 minute distanță sunt înlocuite folosind noile fișiere. Postările deja publicate, livrate în inbox sau create manual în Calendar nu sunt modificate. Nu este necesar build Nest/Next.
+
+
+## Instalare muzică direct pe server, fără SCP
+
+După `git pull --ff-only`, rulați `python3 scripts/install-facebook-music.py`, apoi `pm2 restart ecosystem.config.cjs --update-env`. Scriptul descarcă piesa aleasă din CDN-ul oficial Pixabay în `state/music/facebook-house.mp3`, verifică SHA-256, salvează o copie privată a fișierului env și configurează `FACEBOOK_MUSIC_FILE`. Restul cheilor sunt păstrate. A doua rulare nu redescarcă fișierul valid. MP3-ul nu este redistribuit prin repository.
