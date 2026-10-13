@@ -50,7 +50,7 @@ Este necesar Node 22.12+ din seria 22, ca la instalarea inițială. Scriptul fac
 
 ## Facebook și verificare
 
-Pentru Facebook se creează separat `clip-facebook.mp4`, de 1080 × 1920, cu conținutul de 810 × 1440 poziționat la x=90/y=150. Rămân 180 pixeli în dreapta și 330 jos pentru interfața Facebook. Clipul TikTok original nu este modificat. Copiile Facebook pentru clipurile deja generate se pregătesc automat în fundal; nu este necesară regenerarea ofertelor. La fiecare ofertă poți previzualiza și descărca ambele variante.
+Pentru Facebook se creează separat `clip-facebook.mp4`, de 1080 × 1920, cu conținutul centrat de 1062 × 1888. Marginile sunt simetrice: 9 pixeli stânga/dreapta și 16 pixeli sus/jos, fără decupare sau schimbarea proporțiilor. Clipul TikTok original nu este modificat. Copiile Facebook pentru clipurile deja generate se pregătesc automat în fundal; nu este necesară regenerarea ofertelor. La fiecare ofertă poți previzualiza și descărca ambele variante.
 
 Înainte să activezi, verifică previzualizarea Facebook. După activare, verifică în calendar că apar trei programări pe fiecare pagină pe zi. Istoricul publicărilor automate este sincronizat în fundal; încărcarea într-un inbox TikTok nu este numărată ca publicare publică. În cazul unui timeout după acceptarea unei programări, starea devine „în verificare” și nu se retrimite automat, evitând postările duplicate.
 

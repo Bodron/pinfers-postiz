@@ -4,7 +4,7 @@ from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from scheduling import payload
-from facebook_video import ready as facebook_ready, version as media_version, music_path
+from facebook_video import ready as facebook_ready, version as media_version
 
 TZ = ZoneInfo('Europe/Bucharest')
 UPLOAD_ONLY = os.environ.get('TIKTOK_UPLOAD_ONLY','false') == 'true'
@@ -81,7 +81,7 @@ def cancel_pending(connection,org,api,invalid_only=False,now=None,allowed_accoun
                 item=json.loads(variant['data'])
                 end=datetime.fromisoformat(item['offer']['endDate'].replace('Z','+00:00'))
                 changed_media=False
-                if media_root and music_path() and plan['platform']=='facebook' and plan['post_id'] and datetime.fromisoformat(plan['scheduled'])>now+timedelta(minutes=5):
+                if media_root and plan['platform']=='facebook' and plan['post_id'] and datetime.fromisoformat(plan['scheduled'])>now+timedelta(minutes=5):
                     folder=media_root/plan['key']
                     if facebook_ready(folder):
                         changed_media=plan.get('media_version')!=media_version(folder/'clip-facebook.mp4')

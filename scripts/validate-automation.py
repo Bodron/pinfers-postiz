@@ -7,6 +7,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parent.parent
 sys.path.insert(0,str(root/'pinfers-library'))
 from autopost import run_once, cancel_pending, dates, TZ
+from facebook_video import signature
 
 class FakeAPI:
     def __init__(self):
@@ -50,6 +51,7 @@ class AutomationChecks(unittest.TestCase):
         folder=self.lib.MEDIA/key;folder.mkdir()
         (folder/'clip.mp4').write_bytes(b'original')
         (folder/'clip-facebook.mp4').write_bytes(b'padded')
+        (folder/'facebook-render.json').write_text(json.dumps(signature(folder)))
     def run_cycle(self): run_once(self.lib.connection,self.lib.MEDIA,lambda x:x['offer']['title'],api=self.api,now=self.now)
     def test_three_different_offers_each_day_and_no_duplicate_rerun(self):
         self.run_cycle();self.run_cycle()
@@ -70,8 +72,7 @@ class AutomationChecks(unittest.TestCase):
         self.api.history=[{'id':'post-1','state':'PUBLISHED','publishDate':self.api.posts[0]['date'],'releaseURL':'https://facebook.com/example'}]
         before=self.api.uploads
         for clip in self.lib.MEDIA.glob('*/clip-facebook.mp4'):clip.write_bytes(b'padded-with-music')
-        with patch('autopost.music_path',return_value=Path('music.mp3')):
-            self.run_cycle()
+        self.run_cycle()
         self.assertTrue(self.api.cancelled)
         self.assertNotIn('posts/post-1',self.api.cancelled)
         self.assertGreater(self.api.uploads,before)

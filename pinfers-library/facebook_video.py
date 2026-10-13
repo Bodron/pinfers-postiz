@@ -16,7 +16,7 @@ def signature(folder):
     music=music_path()
     return {'source':version(Path(folder)/'clip.mp4'),
             'music':str(music) if music else '',
-            'music_version':version(music) if music else '', 'encoder':2}
+            'music_version':version(music) if music else '', 'encoder':3}
 
 def ready(folder):
     folder = Path(folder)
@@ -25,7 +25,7 @@ def ready(folder):
     stamp=folder/'facebook-render.json'
     try:
         if stamp.exists(): return json.loads(stamp.read_text())==signature(folder)
-        return not music_path() and target.stat().st_mtime >= source.stat().st_mtime
+        return False  # Legacy copies used oversized, asymmetric padding.
     except (OSError,ValueError): return False
 
 def generate(folder):
@@ -47,7 +47,7 @@ def generate(folder):
                 '-af',f'volume=0.65,afade=t=in:d=0.2,afade=t=out:st={max(0,duration-0.6)}:d=0.6',
                 '-t',str(duration)]
         command += [
-            '-vf', 'scale=810:1440:flags=lanczos,pad=1080:1920:90:150:color=0xEAF0F6,setsar=1',
+            '-vf', 'scale=1062:1888:flags=lanczos,pad=1080:1920:9:16:color=0xEAF0F6,setsar=1',
             '-c:v', 'libx264', '-threads', '2', '-preset', 'veryfast', '-crf', '20',
             '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', str(temporary),
         ]

@@ -22,6 +22,11 @@ with tempfile.TemporaryDirectory() as directory:
         result=json.loads(run('ffprobe','-v','error','-show_streams','-show_format','-of','json',str(video)).stdout)
         assert {s['codec_type'] for s in result['streams']}=={'video','audio'}
         assert abs(float(result['format']['duration'])-2)<0.1
+        pixels=run('ffmpeg','-v','error','-i',str(video),'-frames:v','1','-pix_fmt','rgb24','-f','rawvideo','-').stdout
+        def pixel(x,y):return pixels[(y*1080+x)*3:(y*1080+x)*3+3]
+        # Equal light borders on opposite edges and black content in the centre.
+        assert all(min(pixel(x,y))>200 for x,y in [(2,960),(1077,960),(540,3),(540,1916)])
+        assert all(max(pixel(x,y))<30 for x,y in [(30,960),(1049,960),(540,40),(540,1879)])
         pcm=run('ffmpeg','-v','error','-i',str(video),'-map','0:a:0','-f','s16le','-').stdout
         assert any(pcm), 'Soundtrack must contain audible samples'
         before=video.stat().st_mtime_ns
