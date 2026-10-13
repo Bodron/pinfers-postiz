@@ -75,11 +75,21 @@ class AutomationChecks(unittest.TestCase):
         with self.lib.connection() as db:
             db.execute("INSERT INTO events(org,post_id,key,account,state) VALUES('org','manual:timing',?,'page','PUBLISHED')",(folder.name,))
         self.assertEqual(self.lib.queue_outdated_motion(),1)
+        with self.lib.connection() as db:
+            source_data=db.execute('SELECT data FROM variants WHERE key=?',(folder.name,)).fetchone()[0]
+        self.assertEqual((folder/'timing-input.json').read_text(),source_data)
         self.assertEqual(self.lib.queue_outdated_motion(),0)
         with self.lib.connection() as db:
             self.assertEqual(db.execute('SELECT COUNT(*) FROM events').fetchone()[0],1)
             self.assertEqual(db.execute('SELECT COUNT(*) FROM plans').fetchone()[0],6)
             self.assertEqual(db.execute('SELECT state FROM variants WHERE key=?',(folder.name,)).fetchone()[0],'waiting')
+    def test_missing_facebook_music_keeps_original_ready(self):
+        folder=next(self.lib.MEDIA.iterdir())
+        with patch.dict(os.environ,{'FACEBOOK_MUSIC_FILE':str(folder/'missing.mp3')}):
+            self.assertFalse(self.lib.prepare_facebook(folder))
+        self.assertEqual((folder/'clip.mp4').read_bytes(),b'original')
+        with self.lib.connection() as db:
+            self.assertEqual(db.execute('SELECT state FROM variants WHERE key=?',(folder.name,)).fetchone()[0],'ready')
     def test_tiktok_future_schedules_refresh_after_timing_change(self):
         self.api.accounts=[{'id':'page','name':'TikTok','identifier':'tiktok','disabled':False}]
         with patch('autopost.UPLOAD_ONLY',True):

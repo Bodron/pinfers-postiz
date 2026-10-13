@@ -52,11 +52,16 @@ def get_json(url,headers=None):
 def queue_outdated_motion():
     from video_timing import current
     with connection() as db:
-        keys=[r['key'] for r in db.execute("SELECT key FROM variants WHERE active=1 AND state='ready'") if not current(MEDIA/r['key'])]
-        for key in keys:
+        rows=[dict(r) for r in db.execute("SELECT key,data FROM variants WHERE active=1 AND state='ready'") if not current(MEDIA/r['key'])]
+        for row in rows:
+            key=row['key'];folder=MEDIA/key
+            if folder.exists():
+                # The images belonged to this exact offer snapshot before the
+                # timing migration; reuse them without fetching them again.
+                (folder/'timing-input.json').write_text(row['data'])
             db.execute("UPDATE variants SET state='waiting',error=NULL WHERE key=? AND state='ready'",(key,))
             db.execute('DELETE FROM media WHERE key=?',(key,))
-    return len(keys)
+    return len(rows)
 
 def sync_catalog():
     with LOCK:
@@ -99,6 +104,12 @@ def caption(item):
     return f"{o['title']} la {l['name']} ✨\n\nPreț în Pinfers: {price} {o.get('currency','RON')}.\nValabilă până la {end:%d.%m.%Y, ora %H:%M}.\n\n{desc}\n\nVerifică disponibilitatea și condițiile în aplicația Pinfers.\n#Pinfers #Iasi #OferteLocale"[:2100]
 
 def generate(row):
+    folder=MEDIA/row['key'];marker=folder/'timing-input.json'
+    if marker.exists() and marker.read_text()==row['data'] and all((folder/f'scene{n}.png').exists() for n in range(1,4)):
+        from motion import render_motion
+        render_motion(folder)
+        marker.unlink(missing_ok=True)
+        return
     from PIL import Image
     import template as template
     import scenes as scenes
@@ -126,8 +137,22 @@ def generate(row):
     # Full-resolution clip with smooth diagonal transitions, generated independently per location.
     from motion import render_motion
     render_motion(folder)
+
+def prepare_facebook(folder):
+    # Facebook audio/encoding failure must not mark the original TikTok clip
+    # as broken. Keep retrying this separate copy in the backfill worker.
     from facebook_video import generate as facebook_copy
-    facebook_copy(folder)
+    try:
+        facebook_copy(folder)
+        return True
+    except FileNotFoundError as error:
+        print('Facebook render error: missing file',str(error.filename),flush=True)
+    except subprocess.CalledProcessError as error:
+        detail=(error.stderr or b'').decode(errors='replace') if isinstance(error.stderr,bytes) else (error.stderr or '')
+        print('Facebook render error: FFmpeg',detail[-1500:],flush=True)
+    except Exception as error:
+        print('Facebook render error:',type(error).__name__,str(error)[:500],flush=True)
+    return False
 
 def worker():
     while not STOP.is_set():
@@ -141,18 +166,23 @@ def worker():
             with connection() as db:
                 backfill=next((r for r in db.execute("SELECT key FROM variants WHERE state='ready' AND active=1") if (MEDIA/r['key']/'clip.mp4').exists() and not facebook_ready(MEDIA/r['key'])),None)
             if backfill:
-                try: facebook_copy(MEDIA/backfill['key'])
-                except Exception: STOP.wait(30)
+                if not prepare_facebook(MEDIA/backfill['key']): STOP.wait(30)
             else: STOP.wait(2)
             continue
         try:
             generate(row)
             with connection() as db:db.execute("UPDATE variants SET state='ready',error=NULL WHERE key=? AND data=?",(row['key'],row['data']))
+            prepare_facebook(MEDIA/row['key'])
         except Exception as e:
             message='Generarea clipului a eșuat. Verifică imaginile și descrierea.'
             if isinstance(e,ValueError):message=str(e)
             with connection() as db:db.execute("UPDATE variants SET state='error',error=? WHERE key=?",(message,row['key']))
-            print('Render error:',row['key'],type(e).__name__,flush=True)
+            if isinstance(e,FileNotFoundError): message='Lipsește un fișier necesar generării. Verifică logul pinfers-library.'
+            elif isinstance(e,subprocess.CalledProcessError): message='FFmpeg nu a putut genera clipul. Verifică logul pinfers-library.'
+            with connection() as db:db.execute("UPDATE variants SET error=? WHERE key=?",(message,row['key']))
+            print('Render error:',row['key'],type(e).__name__,str(e)[:500],flush=True)
+            if isinstance(e,subprocess.CalledProcessError):
+                print('Render stderr:',(e.stderr or b'')[-1500:],flush=True)
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
@@ -369,7 +399,8 @@ def automation_worker():
                 with connection() as db:
                     db.execute('UPDATE automation SET last_error=? WHERE org=?',
                                ('Automatizarea are o eroare. Verifică cheia API, conturile și planificările.',config['org']))
-                print('Automation error:',type(error).__name__,flush=True)
+                reason=str(error.reason)[:500] if isinstance(error,urllib.error.URLError) else ''
+                print('Automation error:',type(error).__name__,reason,flush=True)
         STOP.wait(60)
 
 if __name__=='__main__':
@@ -379,6 +410,8 @@ if __name__=='__main__':
     with connection() as db:
         db.execute("UPDATE variants SET state='waiting' WHERE state='rendering'")
         db.execute("UPDATE plans SET state='uncertain' WHERE state='sending'")
+        # Retry errors from the previous coupled renderer once after update.
+        db.execute("UPDATE variants SET state='waiting',error=NULL WHERE active=1 AND state='error' AND error='Generarea clipului a eșuat. Verifică imaginile și descrierea.'")
     print('Clips queued for timing update:',queue_outdated_motion(),flush=True)
     for n in range(max(1,min(3,int(os.environ.get('RENDER_WORKERS','1'))))):multiprocessing.Process(target=worker,daemon=True).start()
     threading.Thread(target=automation_worker,daemon=True).start()
