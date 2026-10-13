@@ -11,52 +11,52 @@ Sursă Postiz inclusă în `postiz/`, modulul Content Pinfers în `pinfers-libra
 - Nu sunt incluse contul local Postiz, volumele Docker, SQLite, clipurile generate, sesiuni sau tokenuri. Pe o instalare nouă ofertele publice se sincronizează și clipurile se regenerează.
 - `config/`, `.env`, baza locală, uploadurile, logurile și datele generate sunt ignorate de Git. Nu folosi `git add -f` pentru acestea.
 
-Comenzile de mai jos sunt pentru **Ubuntu 24.04 / Debian compatibil, acces sudo**, instalare în `/opt/pinfers-postiz`, rulate ca utilizator normal cu sudo. Nu sunt executate automat pe serverul tău. Dacă ai alte aplicații, verifică întâi porturile și resursele. Nu înlocui nginx.conf global și nu folosi baza de date Pinfers din producție.
+Acesta este un server partajat cu alte aplicații, deci începe cu verificările numai în citire. Nu instala pachete de sistem, nu porni/opri servicii, nu schimba nginx.conf și nu salva configurația PM2 până nu am verificat împreună porturile, procesele și serviciile deja existente. Instalarea se va face în `/opt/pinfers-postiz`; nu folosim baza de date Pinfers din producție.
 
-## 1. Clone și cerințe
+## 0. Inventar sigur pe serverul nou
+
+După clone, rulează comenzile de inventar una câte una și trimite-mi rezultatul înainte să continuăm. Fiecare comandă de inventar doar citește starea serverului și nu modifică aplicațiile.
+
+```bash
+cat /etc/os-release
+node --version
+pm2 list
+sudo ss -lntp
+df -h /
+free -h
+```
+
+Trimite-mi rezultatele înainte de instalarea dependențelor. Dacă `node` sau `pm2` nu există, spune-mi; nu instala încă versiuni globale fiindcă pot schimba mediul celorlalte aplicații.
+
+## 1. Clone
 
 ```bash
 sudo install -d -o "$USER" -g "$(id -gn)" /opt/pinfers-postiz
 git clone https://github.com/Bodron/pinfers-postiz.git /opt/pinfers-postiz
 cd /opt/pinfers-postiz
-sudo apt-get update
-sudo apt-get install -y git build-essential python3 python3-venv ffmpeg tzdata postgresql postgresql-client redis-server nginx golang-go certbot python3-certbot-nginx
 ```
 
-Este necesar **Node 22.12+ din seria 22**. Dacă folosești deja NVM pe server:
+Clone-ul nu pornește nimic. Repo-ul este privat în momentul acesta; utilizatorul GitHub al serverului trebuie să aibă acces la el. Alege un director nou al tău și folosește acea cale în loc de `/opt` dacă nu ai acces acolo.
+
+Este necesar **Node 22.12+ din seria 22**. Înainte de schimbarea versiunii, verifică ce Node folosesc aplicațiile existente. Dacă serverul are deja NVM:
 
 ```bash
 nvm install 22
 nvm use 22
-npm install -g pnpm@10.6.1 pm2
+npm install -g pnpm@10.6.1
 node --version
 pnpm --version
 ```
 
-Dacă nu ai NVM, instalează Node 22 din [sursele oficiale Node.js](https://nodejs.org/en/download). Nu actualiza la întâmplare versiunea folosită de celelalte aplicații. PM2 instalat sub NVM trebuie configurat pentru repornire cu versiunea corectă Node.
+Nu instala Node global și nu modifica PM2 startup pe serverul comun până nu verificăm configurația existentă. PM2 instalat sub NVM trebuie pornit cu versiunea potrivită după reboot.
 
-Verifică porturile înainte de pornire:
-
-```bash
-sudo ss -lntp
-```
-
-Acest proiect folosește local 13100 (backend), 13102 (orchestrator), 14200 (frontend), 14011 (bibliotecă), 14007 (Nginx intern), 7233–7239 și 6933–6939 (Temporal); PostgreSQL 5432 și Redis 6379. Pe internet se expun numai 80/443. Dacă sunt ocupate, modifică valorile și configurațiile corespunzătoare înainte să continui.
+Fișierele de exemplu au porturi de pornire pentru Postiz, Redis, PostgreSQL și Temporal. Pe serverul tău alegem porturi după inventarul real, schimbând toate adresele corespunzătoare înainte de pornire. Niciun port al Postiz, Redis, PostgreSQL sau Temporal nu se expune public; Nginx folosește numai loopback. Porturile publice 80/443 rămân sub controlul Nginx deja instalat.
 
 ## 2. Baze dedicate, fără resetarea altor aplicații
 
-Dacă serviciile există deja, păstrează configurația lor. Creează **baze noi și roluri separate**. Comenzile cer parole interactiv; nu le scrie în Git sau în comenzi salvate.
+Nu instala și nu porni PostgreSQL ori Redis prin comenzile generice `apt install` / `systemctl enable --now` pe serverul partajat. După inventar, alegem varianta izolată potrivită: roluri și baze noi în instanța PostgreSQL existentă ori servicii dedicate pe porturi libere. Nu reutiliza instanța MongoDB Pinfers. Comenzile SQL se rulează numai după verificarea portului și a destinației.
 
-```bash
-sudo systemctl enable --now postgresql redis-server
-sudo -u postgres createuser --pwprompt postiz
-sudo -u postgres createdb --owner=postiz postiz
-sudo -u postgres createuser --pwprompt temporal
-sudo -u postgres createdb --owner=temporal temporal
-sudo -u postgres createdb --owner=temporal temporal_visibility
-```
-
-Dacă numele există deja, oprește-te și alege altele; adaptează config-ul. Nu șterge baze existente. PostgreSQL și Redis trebuie să rămână accesibile doar local sau în rețeaua privată.
+Nu șterge, nu reseta și nu modifica baze existente. PostgreSQL și Redis trebuie să rămână accesibile doar local sau în rețeaua privată.
 
 ## 3. Fișierul ENV privat
 
@@ -142,11 +142,9 @@ Nu înlocui un vhost care există deja. Dacă folosești alt panou/configuration
 
 ```bash
 pm2 start ecosystem.config.cjs
-pm2 save
-pm2 startup
 ```
 
-Rulează comanda specifică afișată de `pm2 startup` pentru utilizatorul tău. Apoi:
+Pe serverul comun, **nu rula `pm2 save` și `pm2 startup`** până nu verificăm ce procese și configurații de startup există deja. Acestea operează asupra întregului set PM2 al utilizatorului, nu numai asupra Pinfers. După pornire:
 
 ```bash
 pm2 status
