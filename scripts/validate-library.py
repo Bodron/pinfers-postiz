@@ -36,6 +36,15 @@ class DeploymentChecks(unittest.TestCase):
         self.assertEqual(self.module.MEDIA.parent, Path(self.temp.name).resolve())
         self.assertTrue(self.module.DB.exists())
 
+    def test_download_links_survive_long_offer_descriptions(self):
+        item={'offer':{'title':'Oferta de test','price':19.99,'endDate':'2026-12-31T21:00:00Z',
+            'description':'Descriere lungă. '*1000},'location':{'name':'Locația de test'}}
+        caption=self.module.caption(item)
+        self.assertLessEqual(len(caption),2000)
+        self.assertIn('iPhone: https://apps.apple.com/pl/app/pinfers/id6754986771',caption)
+        self.assertIn('Android: https://play.google.com/store/apps/details?id=com.voucherino.ro&pli=1',caption)
+        self.assertTrue(caption.startswith('Oferta de test la Locația de test'))
+
     def test_https_origin_works(self):
         self.assertEqual(self.request('https://pinferspostiz.bcmenu.ro')[0], 200)
 

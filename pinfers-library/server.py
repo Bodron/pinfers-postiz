@@ -101,7 +101,17 @@ def caption(item):
     end=datetime.fromisoformat(o['endDate'].replace('Z','+00:00')).astimezone(ZoneInfo('Europe/Bucharest'))
     price=f"{o['price']:g}".replace('.',',')
     desc=(o.get('description') or '').strip()
-    return f"{o['title']} la {l['name']} ✨\n\nPreț în Pinfers: {price} {o.get('currency','RON')}.\nValabilă până la {end:%d.%m.%Y, ora %H:%M}.\n\n{desc}\n\nVerifică disponibilitatea și condițiile în aplicația Pinfers.\n#Pinfers #Iasi #OferteLocale"[:2100]
+    intro=f"{o['title']} la {l['name']} ✨\n\nPreț în Pinfers: {price} {o.get('currency','RON')}.\nValabilă până la {end:%d.%m.%Y, ora %H:%M}."
+    footer=("Verifică disponibilitatea și condițiile în aplicația Pinfers.\n\n"
+        "📲 Descarcă Pinfers și găsește oferta în aplicație:\n"
+        "🍎 iPhone: https://apps.apple.com/pl/app/pinfers/id6754986771\n"
+        "🤖 Android: https://play.google.com/store/apps/details?id=com.voucherino.ro&pli=1\n\n"
+        "#Pinfers #Iasi #OferteLocale")
+    # Reserve the complete download block even when an offer has a long description.
+    content=intro+('\n\n'+desc if desc else '')
+    limit=2000-len(footer)-2
+    if len(content)>limit:content=content[:limit-1].rstrip()+'…'
+    return content+'\n\n'+footer
 
 def generate(row):
     folder=MEDIA/row['key'];marker=folder/'timing-input.json'
